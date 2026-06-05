@@ -1,0 +1,43 @@
+<resources>
+    <string name="app_name">视频助手</string>
+
+    <!-- Recording -->
+    <string name="recording_channel_name">录屏服务</string>
+    <string name="recording_notification_title">视频助手正在录制</string>
+    <string name="recording_notification_text">点按停止录制</string>
+    <string name="action_stop">停止</string>
+
+    <!-- Tabs / screens -->
+    <string name="tab_home">录制</string>
+    <string name="tab_tasks">任务</string>
+    <string name="tab_settings">设置</string>
+
+    <!-- Home -->
+    <string name="home_title">开始录制</string>
+    <string name="home_hint">录制时音频默认只采集系统播放声音，不会录入麦克风。</string>
+    <string name="home_mic_toggle">同时录制麦克风（默认关闭）</string>
+    <string name="home_start">开始录屏</string>
+    <string name="home_stop">停止录屏</string>
+    <string name="home_recording">录制中…</string>
+
+    <!-- Settings -->
+    <string name="settings_asr_title">语音转文本（ASR）</string>
+    <string name="settings_llm_title">AI 总结（大模型）</string>
+    <string name="settings_api_key">API Key</string>
+    <string name="settings_base_url">服务地址（可选）</string>
+    <string name="settings_model">模型名</string>
+    <string name="settings_language">识别语言</string>
+    <string name="settings_privacy_note">云端转写与总结会把音频/文本上传到第三方服务，请确认知悉后再开启。密钥仅保存在本机。</string>
+    <string name="settings_save">保存</string>
+
+    <!-- Task detail -->
+    <string name="detail_video">视频</string>
+    <string name="detail_audio">音频</string>
+    <string name="detail_transcript">转写文本</string>
+    <string name="detail_article">文章</string>
+    <string name="action_extract_audio">抽取音频</string>
+    <string name="action_transcribe">转写文本</string>
+    <string name="action_summarize">生成文章</string>
+    <string name="action_retry">重试</string>
+    <string name="action_run_all">一键处理</string>
+</resources>
