@@ -6,6 +6,7 @@
     <string name="recording_notification_title">视频助手正在录制</string>
     <string name="recording_notification_text">点按停止录制</string>
     <string name="action_stop">停止</string>
+    <string name="recording_start_failed">录制启动失败，请重试</string>
 
     <!-- Tabs / screens -->
     <string name="tab_home">录制</string>

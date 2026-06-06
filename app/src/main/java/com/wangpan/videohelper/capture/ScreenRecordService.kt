@@ -11,8 +11,11 @@ import android.content.pm.ServiceInfo
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
+import android.widget.Toast
 import com.wangpan.videohelper.R
 import com.wangpan.videohelper.VideoHelperApp
 import com.wangpan.videohelper.data.TaskRepository
@@ -45,6 +48,11 @@ class ScreenRecordService : Service() {
     private var recorder: ScreenRecorder? = null
     private var outputFile: File? = null
     private var includeMic = false
+
+    /** Dedicated thread for MediaProjection callbacks (Android 14+ requires a non-null handler). */
+    private var callbackThread: HandlerThread? = null
+    /** Guards against double teardown when both the stop action and the projection onStop fire. */
+    private var stopped = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -85,12 +93,16 @@ class ScreenRecordService : Service() {
         val dpi = intent.getIntExtra(RecordingConfig.EXTRA_SCREEN_DPI, 320)
 
         val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        val handlerThread = HandlerThread("vh-projection-cb").also { it.start() }
+        callbackThread = handlerThread
+        val callbackHandler = Handler(handlerThread.looper)
         projection = mpm.getMediaProjection(resultCode, resultData).apply {
             registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
+                    // The user (or system) ended the projection from the status bar / lock screen.
                     stopRecording()
                 }
-            }, null)
+            }, callbackHandler)
         }
 
         val dir = File(filesDir, "recordings").apply { mkdirs() }
@@ -106,13 +118,22 @@ class ScreenRecordService : Service() {
                 includeMic = includeMic,
                 outputFile = file
             ).also { it.start() }
+            // Recorder is live — reflect it in the UI / floating button regardless of caller.
+            VideoHelperApp.recordingActive.value = true
         } catch (e: Exception) {
             Log.e(TAG, "failed to start recorder", e)
-            stopSelf()
+            Toast.makeText(
+                applicationContext,
+                getString(R.string.recording_start_failed),
+                Toast.LENGTH_LONG
+            ).show()
+            stopRecording()
         }
     }
 
     private fun stopRecording() {
+        if (stopped) return
+        stopped = true
         val durationMs = try {
             recorder?.stop() ?: 0L
         } catch (e: Exception) {
@@ -122,6 +143,8 @@ class ScreenRecordService : Service() {
         recorder = null
         projection?.stop()
         projection = null
+        callbackThread?.quitSafely()
+        callbackThread = null
 
         val file = outputFile
         if (file != null && file.exists() && file.length() > 0) {
