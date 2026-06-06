@@ -19,6 +19,11 @@
     <string name="home_start">开始录屏</string>
     <string name="home_stop">停止录屏</string>
     <string name="home_recording">录制中…</string>
+    <string name="home_last_recording">上一次录制文件</string>
+
+    <!-- Floating control button -->
+    <string name="float_toggle_desc">录屏控制按钮</string>
+    <string name="float_permission_needed">需要「显示在其他应用上层」权限才能在后台显示录制按钮，请在系统设置中开启后重试。</string>
 
     <!-- Settings -->
     <string name="settings_asr_title">语音转文本（ASR）</string>
@@ -29,6 +34,13 @@
     <string name="settings_language">识别语言</string>
     <string name="settings_privacy_note">云端转写与总结会把音频/文本上传到第三方服务，请确认知悉后再开启。密钥仅保存在本机。</string>
     <string name="settings_save">保存</string>
+    <string name="settings_saved">已保存</string>
+    <string name="settings_save_success">保存成功</string>
+
+    <!-- API Key 获取说明 -->
+    <string name="settings_help_title">如何获取 API Key</string>
+    <string name="settings_asr_help">语音转文本默认使用「硅基流动 SiliconFlow」：\n1. 打开 https://siliconflow.cn 并注册/登录账号；\n2. 进入控制台 →「API 密钥」页面，点击「新建 API 密钥」；\n3. 复制生成的密钥，粘贴到上方「API Key」中；\n4. 默认模型 FunAudioLLM/SenseVoiceSmall 在该平台免费调用。\n如改用其他 OpenAI 兼容服务（如 Groq Whisper），把服务地址、模型名一并改为对应平台的值即可。</string>
+    <string name="settings_llm_help">AI 总结默认使用「智谱 GLM」：\n1. 打开 https://open.bigmodel.cn 并注册/登录账号；\n2. 进入「API Keys」页面，创建并复制密钥；\n3. 把密钥粘贴到上方「API Key」中；\n4. 默认模型 glm-4-flash 有长期免费额度，适合文本总结。\n如改用 DeepSeek、通义千问等 OpenAI 兼容服务，相应修改服务地址与模型名即可。</string>
 
     <!-- Task detail -->
     <string name="detail_video">视频</string>

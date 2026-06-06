@@ -9,6 +9,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Post a recording notification on Android 13+. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Floating control button drawn over other apps after the app is sent to the background. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Cloud ASR / LLM calls. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -37,6 +39,16 @@
             android:name=".capture.ScreenRecordService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
+        <activity
+            android:name=".capture.ProjectionRequestActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Transparent" />
+
+        <service
+            android:name=".capture.FloatingControlService"
+            android:exported="false" />
 
     </application>
 
