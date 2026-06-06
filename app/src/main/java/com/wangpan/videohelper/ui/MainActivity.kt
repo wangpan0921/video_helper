@@ -1,19 +1,18 @@
 package com.wangpan.videohelper.ui
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
-import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import com.wangpan.videohelper.capture.RecordingConfig
-import com.wangpan.videohelper.capture.ScreenRecordService
+import com.wangpan.videohelper.R
 import com.wangpan.videohelper.VideoHelperApp
+import com.wangpan.videohelper.capture.FloatingControlService
 
 class MainActivity : ComponentActivity() {
 
@@ -22,39 +21,46 @@ class MainActivity : ComponentActivity() {
         setContent {
             VideoHelperTheme {
                 AppRoot(
-                    onStartRecording = { includeMic -> requestProjection(includeMic) },
+                    onStartRecording = { includeMic -> beginFloatingFlow(includeMic) },
                     onStopRecording = { stopRecording() }
                 )
             }
         }
     }
 
-    // --- Recording orchestration -------------------------------------------------------------
+    // --- Floating-button recording flow ------------------------------------------------------
 
     private var pendingIncludeMic = false
 
-    private val projectionLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val data = result.data
-        if (result.resultCode == RESULT_OK && data != null) {
-            startRecordingService(result.resultCode, data, pendingIncludeMic)
+    private val notifPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { /* proceed regardless; notification is best-effort */ }
+
+    private val micPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { /* even if denied, recording continues with system audio only */
+        showFloatingButtonAndBackground()
+    }
+
+    private val overlayPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (FloatingControlService.canShow(this)) {
+            requestMicThenFloat()
+        } else {
+            Toast.makeText(this, R.string.float_permission_needed, Toast.LENGTH_LONG).show()
         }
     }
 
-    private val micPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* even if denied, recording continues with system audio only */
-        launchProjectionConsent()
-    }
-
-    private val notifPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* proceed regardless; notification is best-effort */ }
-
-    private fun requestProjection(includeMic: Boolean) {
+    /**
+     * Step 4 of the requested flow: tapping "开始录屏" sends the app to the background and shows a
+     * floating control button. Tapping that button (handled by the overlay service) starts/stops
+     * the actual recording. We first make sure the "draw over other apps" permission is granted.
+     */
+    private fun beginFloatingFlow(includeMic: Boolean) {
         pendingIncludeMic = includeMic
-        // Notification permission on Android 13+ so the foreground service notification shows.
+        VideoHelperApp.pendingIncludeMic = includeMic
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -62,38 +68,42 @@ class MainActivity : ComponentActivity() {
             notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-        if (includeMic &&
+        if (!FloatingControlService.canShow(this)) {
+            Toast.makeText(this, R.string.float_permission_needed, Toast.LENGTH_LONG).show()
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            overlayPermissionLauncher.launch(intent)
+            return
+        }
+        requestMicThenFloat()
+    }
+
+    private fun requestMicThenFloat() {
+        if (pendingIncludeMic &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
             android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
             micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         } else {
-            launchProjectionConsent()
+            showFloatingButtonAndBackground()
         }
     }
 
-    private fun launchProjectionConsent() {
-        val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projectionLauncher.launch(mpm.createScreenCaptureIntent())
-    }
-
-    private fun startRecordingService(resultCode: Int, data: Intent, includeMic: Boolean) {
-        val metrics = resources.displayMetrics
-        val intent = Intent(this, ScreenRecordService::class.java).apply {
-            action = RecordingConfig.ACTION_START
-            putExtra(RecordingConfig.EXTRA_RESULT_CODE, resultCode)
-            putExtra(RecordingConfig.EXTRA_RESULT_DATA, data)
-            putExtra(RecordingConfig.EXTRA_INCLUDE_MIC, includeMic)
-            putExtra(RecordingConfig.EXTRA_SCREEN_WIDTH, metrics.widthPixels)
-            putExtra(RecordingConfig.EXTRA_SCREEN_HEIGHT, metrics.heightPixels)
-            putExtra(RecordingConfig.EXTRA_SCREEN_DPI, metrics.densityDpi)
-        }
-        ContextCompat.startForegroundService(this, intent)
-        VideoHelperApp.recordingActive.value = true
+    private fun showFloatingButtonAndBackground() {
+        VideoHelperApp.pendingIncludeMic = pendingIncludeMic
+        FloatingControlService.start(this)
+        // Send the app to the background so the user can navigate to the video they want to record.
+        moveTaskToBack(true)
     }
 
     private fun stopRecording() {
-        ContextCompat.startForegroundService(this, ScreenRecordService.stopIntent(this))
+        ContextCompat.startForegroundService(
+            this,
+            com.wangpan.videohelper.capture.ScreenRecordService.stopIntent(this)
+        )
         VideoHelperApp.recordingActive.value = false
+        FloatingControlService.stop(this)
     }
 }
