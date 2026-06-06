@@ -36,6 +36,7 @@ fun HomeScreen(
 ) {
     val settings by settingsViewModel.settings.collectAsState()
     val recording by VideoHelperApp.recordingActive.collectAsState()
+    val lastPath by VideoHelperApp.lastRecordingPath.collectAsState()
 
     var includeMic by remember(settings.recordMicByDefault) {
         mutableStateOf(settings.recordMicByDefault)
@@ -80,7 +81,17 @@ fun HomeScreen(
         Spacer(Modifier.height(32.dp))
 
         if (recording) {
-            Text(stringResource(R.string.home_recording), color = MaterialTheme.colorScheme.error)
+            // Item 2: returning to the app during recording shows a "recording" indicator.
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.home_recording),
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                )
+            }
             Spacer(Modifier.height(12.dp))
             Button(onClick = onStopRecording, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.home_stop))
@@ -91,6 +102,28 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.home_start))
+            }
+            // Item 3: after recording, returning to the app shows the last recording's path.
+            lastPath?.let { path ->
+                Spacer(Modifier.height(16.dp))
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.home_last_recording),
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            text = path,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
     }
