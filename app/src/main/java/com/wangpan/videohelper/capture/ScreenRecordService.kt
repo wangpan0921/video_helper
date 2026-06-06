@@ -125,12 +125,17 @@ class ScreenRecordService : Service() {
 
         val file = outputFile
         if (file != null && file.exists() && file.length() > 0) {
+            VideoHelperApp.lastRecordingPath.value = file.absolutePath
             val repo = TaskRepository.get(applicationContext)
             val mic = includeMic
             scope.launch {
                 repo.createFromRecording(file.absolutePath, durationMs, mic)
             }
         }
+
+        VideoHelperApp.recordingActive.value = false
+        // Tear down the floating control button once a recording session ends.
+        FloatingControlService.stop(applicationContext)
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
