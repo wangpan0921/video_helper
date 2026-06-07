@@ -105,7 +105,11 @@ class ScreenRecordService : Service() {
             }, callbackHandler)
         }
 
-        val dir = File(filesDir, "recordings").apply { mkdirs() }
+        // Save to the app-specific external dir (/sdcard/Android/data/<pkg>/files/Movies/VideoHelper),
+        // which file managers can browse without any runtime permission. Fall back to internal
+        // storage if external media is unavailable.
+        val baseDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: filesDir
+        val dir = File(baseDir, "VideoHelper").apply { mkdirs() }
         val file = File(dir, "rec_${System.currentTimeMillis()}.mp4")
         outputFile = file
 

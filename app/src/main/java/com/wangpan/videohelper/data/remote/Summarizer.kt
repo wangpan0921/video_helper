@@ -68,8 +68,8 @@ class OpenAiCompatibleSummarizer(
         }
 
         val request = Request.Builder()
-            .url(settings.llmBaseUrl.trimEnd('/') + "/chat/completions")
-            .addHeader("Authorization", "Bearer ${settings.llmApiKey}")
+            .url(settings.llmBaseUrl.trim().trimEnd('/') + "/chat/completions")
+            .addHeader("Authorization", "Bearer ${settings.llmApiKey.sanitizeHeaderValue()}")
             .post(OpenAiCompatibleTranscriber.jsonBody(payload.toString()))
             .build()
 

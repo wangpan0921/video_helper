@@ -18,6 +18,15 @@ interface Transcriber {
 }
 
 /**
+ * Strips any characters that are illegal in an HTTP header value. API keys pasted from a browser or
+ * a notes app frequently carry a trailing newline or stray spaces; OkHttp rejects those outright
+ * ("Unexpected char 0x0a ... in Authorization value"). We keep only printable ASCII and drop the
+ * rest so a stray line break never breaks the request.
+ */
+internal fun String.sanitizeHeaderValue(): String =
+    trim().filter { it.code in 0x20..0x7E }
+
+/**
  * OpenAI-compatible /audio/transcriptions endpoint, used by SiliconFlow (free SenseVoiceSmall model
  * for Chinese) among others. The user supplies base URL, model and API key in Settings.
  */
@@ -42,8 +51,8 @@ class OpenAiCompatibleTranscriber(
             .build()
 
         val request = Request.Builder()
-            .url(settings.asrBaseUrl.trimEnd('/') + "/audio/transcriptions")
-            .addHeader("Authorization", "Bearer ${settings.asrApiKey}")
+            .url(settings.asrBaseUrl.trim().trimEnd('/') + "/audio/transcriptions")
+            .addHeader("Authorization", "Bearer ${settings.asrApiKey.sanitizeHeaderValue()}")
             .post(body)
             .build()
 
