@@ -131,6 +131,22 @@ class TaskRepository private constructor(
         if (dao.getById(id)?.summarizeStatus != StageStatus.DONE) summarize(id)
     }
 
+    /**
+     * Exports the generated article to a Markdown file under /sdcard/videohelper and returns the
+     * absolute path. Throws if there is no article yet.
+     */
+    suspend fun exportArticleToMarkdown(id: String): String {
+        val task = dao.getById(id) ?: error("任务不存在")
+        val article = task.article?.takeIf { it.isNotBlank() } ?: error("还没有生成文章，无法导出")
+
+        val dir = com.wangpan.videohelper.storage.AppStorage.outputDir(appContext)
+        val safeTitle = task.title.replace(Regex("[^\\w\\u4e00-\\u9fa5-]"), "_")
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val out = File(dir, "article_${safeTitle}_$stamp.md")
+        out.writeText("# ${task.title}\n\n$article\n")
+        return out.absolutePath
+    }
+
     companion object {
         @Volatile
         private var INSTANCE: TaskRepository? = null
