@@ -26,9 +26,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.widget.Toast
 import com.wangpan.videohelper.R
 import com.wangpan.videohelper.data.db.StageStatus
 import com.wangpan.videohelper.data.db.TaskEntity
@@ -41,6 +43,7 @@ fun TaskDetailScreen(
     viewModel: TaskDetailViewModel = viewModel()
 ) {
     val task by viewModel.task(taskId).collectAsState(initial = null)
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -73,6 +76,32 @@ fun TaskDetailScreen(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !t.anyRunning()
             ) { Text(stringResource(R.string.action_run_all)) }
+
+            val exportOkMsg = stringResource(R.string.export_success)
+            OutlinedButton(
+                onClick = {
+                    viewModel.exportArticle(taskId) { result ->
+                        result.fold(
+                            onSuccess = { path ->
+                                Toast.makeText(
+                                    context,
+                                    "$exportOkMsg\n$path",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            },
+                            onFailure = { e ->
+                                Toast.makeText(
+                                    context,
+                                    e.message ?: "导出失败",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = t.article?.isNotBlank() == true
+            ) { Text(stringResource(R.string.action_export_md)) }
 
             t.errorMessage?.let { err ->
                 Card(Modifier.fillMaxWidth()) {

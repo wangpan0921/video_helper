@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -60,6 +61,20 @@ class MainActivity : ComponentActivity() {
     private fun beginFloatingFlow(includeMic: Boolean) {
         pendingIncludeMic = includeMic
         VideoHelperApp.pendingIncludeMic = includeMic
+
+        // Ask for "All files access" once so recordings land in the public /sdcard/videohelper folder.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            Toast.makeText(this, R.string.storage_permission_hint, Toast.LENGTH_LONG).show()
+            runCatching {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                )
+            }
+            // Continue regardless; if the user declines, files fall back to the app-specific dir.
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=

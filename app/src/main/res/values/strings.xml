@@ -7,6 +7,17 @@
     <string name="recording_notification_text">点按停止录制</string>
     <string name="action_stop">停止</string>
     <string name="recording_start_failed">录制启动失败，请重试</string>
+    <string name="recording_saved_at">录制已保存：%1$s</string>
+
+    <!-- Delete confirmation -->
+    <string name="delete_confirm_title">删除任务</string>
+    <string name="delete_confirm_message">确定删除「%1$s」吗？该操作不可撤销，关联的录制和音频文件也会一并删除。</string>
+    <string name="delete_confirm_ok">删除</string>
+    <string name="delete_confirm_cancel">取消</string>
+
+    <!-- Export -->
+    <string name="action_export_md">导出文章到 Markdown</string>
+    <string name="export_success">已导出文章：</string>
 
     <!-- Tabs / screens -->
     <string name="tab_home">录制</string>
@@ -25,6 +36,7 @@
     <!-- Floating control button -->
     <string name="float_toggle_desc">录屏控制按钮</string>
     <string name="float_permission_needed">需要「显示在其他应用上层」权限才能在后台显示录制按钮，请在系统设置中开启后重试。</string>
+    <string name="storage_permission_hint">为把录制和文章保存到 /sdcard/videohelper，请授予「所有文件访问权限」。未授予时文件会保存到应用专属目录。</string>
 
     <!-- Settings -->
     <string name="settings_asr_title">语音转文本（ASR）</string>

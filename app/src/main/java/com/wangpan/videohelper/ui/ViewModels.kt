@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class TasksViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = TaskRepository.get(app)
@@ -29,6 +30,14 @@ class TaskDetailViewModel(app: Application) : AndroidViewModel(app) {
     fun transcribe(id: String) = launchStage { repo.transcribe(id) }
     fun summarize(id: String) = launchStage { repo.summarize(id) }
     fun runAll(id: String) = launchStage { repo.runAll(id) }
+
+    /** Exports the article to a .md file; reports the path or error back on the main thread. */
+    fun exportArticle(id: String, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching { repo.exportArticleToMarkdown(id) }
+            withContext(Dispatchers.Main) { onResult(result) }
+        }
+    }
 
     private fun launchStage(block: suspend () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {

@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import com.wangpan.videohelper.R
@@ -105,11 +106,9 @@ class ScreenRecordService : Service() {
             }, callbackHandler)
         }
 
-        // Save to the app-specific external dir (/sdcard/Android/data/<pkg>/files/Movies/VideoHelper),
-        // which file managers can browse without any runtime permission. Fall back to internal
-        // storage if external media is unavailable.
-        val baseDir = getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES) ?: filesDir
-        val dir = File(baseDir, "VideoHelper").apply { mkdirs() }
+        // Save to /sdcard/videohelper so the user can find files easily (falls back to the
+        // app-specific external dir if "All files access" is not granted).
+        val dir = com.wangpan.videohelper.storage.AppStorage.outputDir(this)
         val file = File(dir, "rec_${System.currentTimeMillis()}.mp4")
         outputFile = file
 
@@ -126,11 +125,7 @@ class ScreenRecordService : Service() {
             VideoHelperApp.recordingActive.value = true
         } catch (e: Exception) {
             Log.e(TAG, "failed to start recorder", e)
-            Toast.makeText(
-                applicationContext,
-                getString(R.string.recording_start_failed),
-                Toast.LENGTH_LONG
-            ).show()
+            toastOnMain(getString(R.string.recording_start_failed))
             stopRecording()
         }
     }
@@ -153,6 +148,8 @@ class ScreenRecordService : Service() {
         val file = outputFile
         if (file != null && file.exists() && file.length() > 0) {
             VideoHelperApp.lastRecordingPath.value = file.absolutePath
+            // Tell the user where the recording was saved.
+            toastOnMain(getString(R.string.recording_saved_at, file.absolutePath))
             val repo = TaskRepository.get(applicationContext)
             val mic = includeMic
             scope.launch {
@@ -204,6 +201,13 @@ class ScreenRecordService : Service() {
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    /** Toasts are UI; stopRecording can run on the projection callback thread, so hop to main. */
+    private fun toastOnMain(message: String) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
         }
     }
 
