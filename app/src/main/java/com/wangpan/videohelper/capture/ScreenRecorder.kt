@@ -228,7 +228,10 @@ class ScreenRecorder(
         val sysBuf = ByteArray(frameBytes)
         val micBuf = ByteArray(frameBytes)
         val info = MediaCodec.BufferInfo()
-        var presentationUs = 0L
+        // Drive the audio timestamp from the number of PCM bytes submitted so it stays monotonic and
+        // independent of how the data is split across encoder input buffers.
+        val bytesPerSecond = SAMPLE_RATE * CHANNEL_COUNT * 2
+        var totalBytes = 0L
 
         while (recording.get()) {
             val read = systemAudioRecord?.read(sysBuf, 0, sysBuf.size) ?: 0
@@ -241,20 +244,31 @@ class ScreenRecorder(
                 sysBuf.copyOf(read)
             }
 
-            val inIndex = audioEncoder.dequeueInputBuffer(TIMEOUT_US)
-            if (inIndex >= 0) {
+            // The AAC encoder input buffer holds a single AAC frame (~4 KB), which is smaller than a
+            // PCM read from AudioRecord. Feed the PCM in chunks that each fit one input buffer.
+            var offset = 0
+            while (offset < mixed.size && recording.get()) {
+                val inIndex = audioEncoder.dequeueInputBuffer(TIMEOUT_US)
+                if (inIndex < 0) {
+                    drainAudioEncoder(info, endOfStream = false)
+                    continue
+                }
                 val inBuf: ByteBuffer = audioEncoder.getInputBuffer(inIndex)!!
                 inBuf.clear()
-                inBuf.put(mixed)
-                presentationUs = (System.nanoTime() - startNanos) / 1_000
-                audioEncoder.queueInputBuffer(inIndex, 0, mixed.size, presentationUs, 0)
+                val chunk = min(inBuf.remaining(), mixed.size - offset)
+                inBuf.put(mixed, offset, chunk)
+                val presentationUs = totalBytes * 1_000_000L / bytesPerSecond
+                audioEncoder.queueInputBuffer(inIndex, 0, chunk, presentationUs, 0)
+                offset += chunk
+                totalBytes += chunk
+                drainAudioEncoder(info, endOfStream = false)
             }
-            drainAudioEncoder(info, endOfStream = false)
         }
 
         // Flush a final EOS frame.
         val inIndex = audioEncoder.dequeueInputBuffer(TIMEOUT_US)
         if (inIndex >= 0) {
+            val presentationUs = totalBytes * 1_000_000L / bytesPerSecond
             audioEncoder.queueInputBuffer(
                 inIndex, 0, 0, presentationUs + 1,
                 MediaCodec.BUFFER_FLAG_END_OF_STREAM
