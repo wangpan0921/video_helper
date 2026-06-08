@@ -31,6 +31,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Notification permission is best-effort and unrelated to recording/overlay; request it
+        // once at startup so it never gets entangled with the "display over other apps" flow.
+        maybeRequestNotificationPermission()
+
         setContent {
             VideoHelperTheme {
                 AppRoot(
@@ -104,15 +109,8 @@ class MainActivity : ComponentActivity() {
         continueFloatingFlow()
     }
 
-    /** Continues the recording flow after the storage decision: notif → overlay → mic → float. */
+    /** Continues the recording flow after the storage decision: overlay → mic → float. */
     private fun continueFloatingFlow() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
-            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-
         if (!FloatingControlService.canShow(this)) {
             Toast.makeText(this, R.string.float_permission_needed, Toast.LENGTH_LONG).show()
             val intent = Intent(
@@ -123,6 +121,16 @@ class MainActivity : ComponentActivity() {
             return
         }
         requestMicThenFloat()
+    }
+
+    /** Requests POST_NOTIFICATIONS once on Android 13+; independent of the recording flow. */
+    private fun maybeRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     /** Opens the "All files access" settings page, with fallbacks across device variations. */

@@ -17,7 +17,11 @@
 
     <!-- Export -->
     <string name="action_export_md">导出文章到 Markdown</string>
-    <string name="export_success">已导出文章：</string>
+    <string name="export_success">已导出文章</string>
+    <string name="export_failed">导出失败</string>
+    <string name="dialog_ok">知道了</string>
+    <string name="copy_path">复制路径</string>
+    <string name="path_copied">路径已复制到剪贴板</string>
 
     <!-- Tabs / screens -->
     <string name="tab_home">录制</string>
