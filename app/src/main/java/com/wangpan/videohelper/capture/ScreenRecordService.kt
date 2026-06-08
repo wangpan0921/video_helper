@@ -25,6 +25,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Foreground service (type=mediaProjection) that owns the [MediaProjection] for the lifetime of a
@@ -89,9 +92,19 @@ class ScreenRecordService : Service() {
         }
 
         includeMic = intent.getBooleanExtra(RecordingConfig.EXTRA_INCLUDE_MIC, false)
-        val width = intent.getIntExtra(RecordingConfig.EXTRA_SCREEN_WIDTH, 1080)
-        val height = intent.getIntExtra(RecordingConfig.EXTRA_SCREEN_HEIGHT, 1920)
-        val dpi = intent.getIntExtra(RecordingConfig.EXTRA_SCREEN_DPI, 320)
+        // The consent activity is transparent and may report unreliable metrics, so resolve the real
+        // display size from the service's window manager; only fall back to the passed extras (and a
+        // last-resort default) when the live metrics look invalid.
+        val metrics = currentDisplayMetrics()
+        val extraW = intent.getIntExtra(RecordingConfig.EXTRA_SCREEN_WIDTH, 0)
+        val extraH = intent.getIntExtra(RecordingConfig.EXTRA_SCREEN_HEIGHT, 0)
+        val extraDpi = intent.getIntExtra(RecordingConfig.EXTRA_SCREEN_DPI, 0)
+        val width = (metrics?.first ?: 0).takeIf { it >= 64 }
+            ?: extraW.takeIf { it >= 64 } ?: 1080
+        val height = (metrics?.second ?: 0).takeIf { it >= 64 }
+            ?: extraH.takeIf { it >= 64 } ?: 1920
+        val dpi = (metrics?.third ?: 0).takeIf { it > 0 }
+            ?: extraDpi.takeIf { it > 0 } ?: 320
 
         val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         val handlerThread = HandlerThread("vh-projection-cb").also { it.start() }
@@ -106,10 +119,13 @@ class ScreenRecordService : Service() {
             }, callbackHandler)
         }
 
-        // Save to /sdcard/videohelper so the user can find files easily (falls back to the
-        // app-specific external dir if "All files access" is not granted).
-        val dir = com.wangpan.videohelper.storage.AppStorage.outputDir(this)
-        val file = File(dir, "rec_${System.currentTimeMillis()}.mp4")
+        // Each recording session gets its own timestamp-named folder under /sdcard/videohelper,
+        // so the mp4 (and later the exported article) live together. Falls back to the app-specific
+        // external dir when "All files access" is not granted.
+        val sessionName = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+            .format(Date(System.currentTimeMillis()))
+        val dir = com.wangpan.videohelper.storage.AppStorage.sessionDir(this, sessionName)
+        val file = File(dir, "rec_$sessionName.mp4")
         outputFile = file
 
         try {
@@ -208,6 +224,26 @@ class ScreenRecordService : Service() {
     private fun toastOnMain(message: String) {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** Real display (width, height, densityDpi) from the live default display, or null if unknown. */
+    private fun currentDisplayMetrics(): Triple<Int, Int, Int>? {
+        return try {
+            val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+            val dpi = resources.configuration.densityDpi
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val bounds = wm.currentWindowMetrics.bounds
+                Triple(bounds.width(), bounds.height(), dpi)
+            } else {
+                val dm = android.util.DisplayMetrics()
+                @Suppress("DEPRECATION")
+                wm.defaultDisplay.getRealMetrics(dm)
+                Triple(dm.widthPixels, dm.heightPixels, if (dm.densityDpi > 0) dm.densityDpi else dpi)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "display metrics unavailable", e)
+            null
         }
     }
 
