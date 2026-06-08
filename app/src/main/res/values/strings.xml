@@ -8,6 +8,7 @@
     <string name="action_stop">停止</string>
     <string name="recording_start_failed">录制启动失败，请重试</string>
     <string name="recording_saved_at">录制已保存：%1$s</string>
+    <string name="recording_exited">已退出录制</string>
 
     <!-- Delete confirmation -->
     <string name="delete_confirm_title">删除任务</string>

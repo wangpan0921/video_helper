@@ -1,6 +1,8 @@
 package com.wangpan.videohelper.capture
 
 import android.app.Service
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
@@ -11,6 +13,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.LinearInterpolator
 import android.widget.ImageView
 import androidx.core.content.ContextCompat
 import com.wangpan.videohelper.R
@@ -50,6 +53,8 @@ class FloatingControlService : Service() {
     private var floatingView: ImageView? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var observeJob: Job? = null
+    /** "Breathing" alpha pulse shown while recording is active. */
+    private var breathingAnimator: ObjectAnimator? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -72,9 +77,28 @@ class FloatingControlService : Service() {
                     view.setBackgroundResource(
                         if (recording) R.drawable.bg_float_recording else R.drawable.bg_float_idle
                     )
+                    if (recording) startBreathing(view) else stopBreathing(view)
                 }
             }
         }
+    }
+
+    /** A slow, infinite alpha pulse (bright↔dim) to signal an active recording. */
+    private fun startBreathing(view: View) {
+        if (breathingAnimator?.isRunning == true) return
+        breathingAnimator = ObjectAnimator.ofFloat(view, View.ALPHA, 1f, 0.35f).apply {
+            duration = 900
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            start()
+        }
+    }
+
+    private fun stopBreathing(view: View) {
+        breathingAnimator?.cancel()
+        breathingAnimator = null
+        view.alpha = 1f
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -179,6 +203,8 @@ class FloatingControlService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        breathingAnimator?.cancel()
+        breathingAnimator = null
         observeJob?.cancel()
         floatingView?.let { runCatching { windowManager.removeView(it) } }
         floatingView = null
