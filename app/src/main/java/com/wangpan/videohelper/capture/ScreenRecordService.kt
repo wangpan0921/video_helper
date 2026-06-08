@@ -174,6 +174,8 @@ class ScreenRecordService : Service() {
         }
 
         VideoHelperApp.recordingActive.value = false
+        // Confirm to the user that recording has ended.
+        toastOnMain(getString(R.string.recording_exited))
         // Tear down the floating control button once a recording session ends.
         FloatingControlService.stop(applicationContext)
 
