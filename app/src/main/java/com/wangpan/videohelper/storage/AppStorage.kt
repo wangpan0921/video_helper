@@ -42,4 +42,11 @@ object AppStorage {
         fallback.mkdirs()
         return fallback
     }
+
+    /**
+     * Returns a per-session subdirectory named after [name] (a timestamp) under [outputDir], so each
+     * recording's artifacts (mp4, exported article, ...) live together in their own folder.
+     */
+    fun sessionDir(context: Context, name: String): File =
+        File(outputDir(context), name).apply { mkdirs() }
 }

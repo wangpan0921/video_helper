@@ -26,12 +26,16 @@ import kotlin.math.min
  */
 class ScreenRecorder(
     private val projection: MediaProjection,
-    private val width: Int,
-    private val height: Int,
+    width: Int,
+    height: Int,
     private val dpi: Int,
     private val includeMic: Boolean,
     private val outputFile: File
 ) {
+    // H.264 requires even dimensions; coerce defensively so a bad metric never crashes configure().
+    private val width: Int = (if (width >= 64) width else 1080) and 1.inv()
+    private val height: Int = (if (height >= 64) height else 1920) and 1.inv()
+
     companion object {
         private const val TAG = "ScreenRecorder"
         private const val VIDEO_MIME = MediaFormat.MIMETYPE_VIDEO_AVC
