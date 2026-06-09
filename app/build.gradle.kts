@@ -21,9 +21,25 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            // Credentials come from gradle properties (e.g. ~/.gradle/gradle.properties or -P flags)
+            // so secrets stay out of version control; falls back to the repo's release.keystore
+            // defaults for local/CI debug-release builds. The keystore itself is gitignored.
+            val storePathProp = (project.findProperty("VH_STORE_FILE") as String?) ?: "release.keystore"
+            val ksFile = rootProject.file("app/$storePathProp").takeIf { it.exists() }
+                ?: rootProject.file(storePathProp)
+            storeFile = ksFile
+            storePassword = (project.findProperty("VH_STORE_PASSWORD") as String?) ?: "videohelper"
+            keyAlias = (project.findProperty("VH_KEY_ALIAS") as String?) ?: "videohelper"
+            keyPassword = (project.findProperty("VH_KEY_PASSWORD") as String?) ?: "videohelper"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
