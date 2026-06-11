@@ -54,13 +54,13 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun save(settings: AppSettings) {
         context.dataStore.edit { p ->
-            p[Keys.ASR_BASE_URL] = settings.asrBaseUrl
-            p[Keys.ASR_API_KEY] = settings.asrApiKey
-            p[Keys.ASR_MODEL] = settings.asrModel
-            p[Keys.LLM_BASE_URL] = settings.llmBaseUrl
-            p[Keys.LLM_API_KEY] = settings.llmApiKey
-            p[Keys.LLM_MODEL] = settings.llmModel
-            p[Keys.LANGUAGE] = settings.language
+            p[Keys.ASR_BASE_URL] = settings.asrBaseUrl.trim()
+            p[Keys.ASR_API_KEY] = settings.asrApiKey.trim()
+            p[Keys.ASR_MODEL] = settings.asrModel.trim()
+            p[Keys.LLM_BASE_URL] = settings.llmBaseUrl.trim()
+            p[Keys.LLM_API_KEY] = settings.llmApiKey.trim()
+            p[Keys.LLM_MODEL] = settings.llmModel.trim()
+            p[Keys.LANGUAGE] = settings.language.trim()
             p[Keys.RECORD_MIC_DEFAULT] = settings.recordMicByDefault
         }
     }

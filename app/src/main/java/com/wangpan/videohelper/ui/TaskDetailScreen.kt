@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -20,15 +21,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.widget.Toast
 import com.wangpan.videohelper.R
 import com.wangpan.videohelper.data.db.StageStatus
 import com.wangpan.videohelper.data.db.TaskEntity
@@ -41,6 +50,30 @@ fun TaskDetailScreen(
     viewModel: TaskDetailViewModel = viewModel()
 ) {
     val task by viewModel.task(taskId).collectAsState(initial = null)
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+
+    // Holds the exported file path so we can show it in full (a toast truncates long paths).
+    var exportedPath by remember { mutableStateOf<String?>(null) }
+
+    exportedPath?.let { path ->
+        AlertDialog(
+            onDismissRequest = { exportedPath = null },
+            title = { Text(stringResource(R.string.export_success)) },
+            text = { Text(path) },
+            confirmButton = {
+                TextButton(onClick = { exportedPath = null }) {
+                    Text(stringResource(R.string.dialog_ok))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    clipboard.setText(AnnotatedString(path))
+                    Toast.makeText(context, R.string.path_copied, Toast.LENGTH_SHORT).show()
+                }) { Text(stringResource(R.string.copy_path)) }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -73,6 +106,26 @@ fun TaskDetailScreen(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !t.anyRunning()
             ) { Text(stringResource(R.string.action_run_all)) }
+
+            val exportFailPrefix = stringResource(R.string.export_failed)
+            OutlinedButton(
+                onClick = {
+                    viewModel.exportArticle(taskId) { result ->
+                        result.fold(
+                            onSuccess = { path -> exportedPath = path },
+                            onFailure = { e ->
+                                Toast.makeText(
+                                    context,
+                                    e.message ?: exportFailPrefix,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = t.article?.isNotBlank() == true
+            ) { Text(stringResource(R.string.action_export_md)) }
 
             t.errorMessage?.let { err ->
                 Card(Modifier.fillMaxWidth()) {
