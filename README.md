@@ -1,11 +1,11 @@
 # 视频助手 (Video Helper)
 
-一款 Android App：对手机正在播放的视频录屏（**默认只录系统音频**），抽取音频、转写为文本，再用大模型总结成一篇完整文章。
+一款 Android App：对手机正在播放的视频录屏（**默认只录系统音频**），抽取音频、转写为文本，再用大模型把转写稿规整成一篇通顺可读的文章。
 
 ## 功能流水线
 
 ```
-录屏(系统音频/可选麦克风) → 抽取音频(WAV) → 语音转文本(ASR) → AI 总结成文(LLM)
+录屏(系统音频/可选麦克风) → 抽取音频(WAV) → 语音转文本(ASR) → AI 规整成文(LLM)
 ```
 
 每个阶段的产物都会落库（Room），可单步重试、断点续跑，一处失败不会丢失之前的结果。
@@ -27,7 +27,7 @@ minSdk 29 / targetSdk 34 / compileSdk 34。
 |---|---|
 | `capture` | 录屏前台服务 `ScreenRecordService` 与编码器 `ScreenRecorder`（系统音频 + 可选麦克风混音） |
 | `media` | `AudioExtractor`：MP4 → 16kHz 单声道 WAV |
-| `data.remote` | `Transcriber`（ASR）、`Summarizer`（LLM，长文 map-reduce 分块总结） |
+| `data.remote` | `Transcriber`（ASR）、`Summarizer`（LLM，长文分块逐段「规整」后按序拼接，贴合原文不概括） |
 | `data.db` | Room：`TaskEntity` / `TaskDao`，含每阶段状态机 |
 | `data` | `TaskRepository`：流水线编排（抽音/转写/总结/一键处理） |
 | `data.settings` | `SettingsRepository`：Provider 配置（DataStore，密钥仅存本机） |
