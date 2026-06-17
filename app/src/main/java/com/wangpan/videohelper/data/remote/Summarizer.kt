@@ -16,9 +16,9 @@ interface Summarizer {
  * OpenAI-compatible /chat/completions client. Defaults target Zhipu GLM-4-Flash (free tier, strong
  * Chinese), but any compatible endpoint works via Settings.
  *
- * Long transcripts are handled with a map-reduce strategy: each chunk is summarized first, then the
- * partial summaries are merged into one cohesive article. This keeps us within the model's context
- * window regardless of recording length.
+ * 目标是「规整」而非「概括」：尽量贴合语音转写原文，只做可读化整理（断句、分段、去口水词、纠正明显的
+ * 同音/错别字），不重新提炼、不压缩信息、不改写表达顺序。长转写按顺序分块逐段规整后拼接，避免超出上下文
+ * 窗口，同时保证不丢失细节。
  */
 class OpenAiCompatibleSummarizer(
     private val client: OkHttpClient = defaultClient()
@@ -30,35 +30,17 @@ class OpenAiCompatibleSummarizer(
         require(clean.isNotEmpty()) { "转写文本为空，无法总结。" }
 
         val chunks = chunk(clean, MAX_CHARS_PER_CHUNK)
-        if (chunks.size == 1) {
-            return chat(buildArticlePrompt(chunks.first()), settings)
+        // 逐块规整后按原始顺序拼接；不做 map-reduce 提炼，避免信息被压缩或改写。
+        return chunks.joinToString("\n\n") { c ->
+            chat(buildPolishPrompt(c), settings)
         }
-
-        // map: per-chunk condensed notes
-        val notes = chunks.mapIndexed { i, c ->
-            chat(buildChunkPrompt(c, i + 1, chunks.size), settings)
-        }
-        // reduce: merge notes into a final article
-        return chat(buildReducePrompt(notes.joinToString("\n\n")), settings)
     }
-
-    private fun buildArticlePrompt(text: String): String =
-        "你是一名中文编辑。请把下面这段视频的语音转写文本，整理润色成一篇结构清晰、逻辑连贯的完整中文文章。" +
-            "要求：保留关键信息和观点，去除口语化重复和语气词，分段合理，可在合适处添加小标题。" +
-            "直接输出文章正文，不要解释你的处理过程。\n\n转写文本：\n$text"
-
-    private fun buildChunkPrompt(text: String, idx: Int, total: Int): String =
-        "下面是一段长视频转写文本的第 $idx/$total 部分。请提炼这部分的关键内容、观点和细节，" +
-            "输出简洁的中文要点（保留重要信息，去除口语重复）。只输出要点，不要额外说明。\n\n$text"
-
-    private fun buildReducePrompt(notes: String): String =
-        "以下是一段视频按顺序分段提炼出的要点。请基于这些要点，整合成一篇结构清晰、逻辑连贯的完整中文文章，" +
-            "分段合理并可添加小标题，保证前后内容衔接自然。直接输出文章正文。\n\n分段要点：\n$notes"
 
     private fun chat(prompt: String, settings: AppSettings): String {
         val payload = JSONObject().apply {
             put("model", settings.llmModel)
-            put("temperature", 0.4)
+            // 低温度，尽量贴合原文、减少自由发挥与改写。
+            put("temperature", 0.2)
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "user")
@@ -116,5 +98,18 @@ class OpenAiCompatibleSummarizer(
             .writeTimeout(2, TimeUnit.MINUTES)
             .readTimeout(3, TimeUnit.MINUTES)
             .build()
+
+        /**
+         * 规整提示词：明确要求贴合原文、保留全部事实细节，只做可读化整理，禁止概括/压缩/改写顺序。
+         */
+        fun buildPolishPrompt(text: String): String =
+            "你是一名严谨的中文文字校对与整理助手。下面是一段视频的语音转写文本，可能有口语重复、" +
+                "语气词、断句缺失和少量同音字错误。请把它整理成通顺、可读的书面文字，要求：\n" +
+                "1. 必须贴合原文，逐句对应整理，不要概括、不要压缩、不要总结，也不要改变内容的先后顺序。\n" +
+                "2. 完整保留原文中的所有事实、观点、举例、数字、时间、人名、地名和专有名词，不得删减或臆造。\n" +
+                "3. 仅做以下处理：补全标点和断句、合理分段、去除「嗯/啊/那个/就是说」等口水词和无意义重复、" +
+                "修正明显的同音字或错别字。\n" +
+                "4. 不要添加原文没有的信息、评论或小标题。\n" +
+                "5. 直接输出整理后的正文，不要解释你的处理过程。\n\n转写文本：\n$text"
     }
 }
