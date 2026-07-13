@@ -1,5 +1,7 @@
 package com.wangpan.videohelper.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -155,13 +157,22 @@ fun TaskDetailScreen(
                 enabled = !t.anyRunning()
             )
 
+            val transcriptText = t.transcript?.takeIf { it.isNotBlank() }
+            val transcriptCopiedMsg = stringResource(R.string.transcript_copied)
             StageCard(
                 title = stringResource(R.string.detail_transcript),
                 status = t.transcribeStatus,
-                body = t.transcript?.takeIf { it.isNotBlank() } ?: "尚未转写",
+                body = transcriptText ?: "尚未转写",
                 actionLabel = actionLabelFor(t.transcribeStatus, stringResource(R.string.action_transcribe)),
                 onAction = { viewModel.transcribe(taskId) },
-                enabled = !t.anyRunning() && t.audioStatus == StageStatus.DONE
+                enabled = !t.anyRunning() && t.audioStatus == StageStatus.DONE,
+                onLongPressBody = transcriptText?.let {
+                    {
+                        clipboard.setText(AnnotatedString(it))
+                        Toast.makeText(context, transcriptCopiedMsg, Toast.LENGTH_SHORT).show()
+                    }
+                },
+                bodyHint = transcriptText?.let { stringResource(R.string.transcript_copy_hint) }
             )
 
             StageCard(
@@ -184,6 +195,7 @@ private fun TaskEntity.anyRunning(): Boolean =
 private fun actionLabelFor(status: StageStatus, defaultLabel: String): String =
     if (status == StageStatus.FAILED || status == StageStatus.DONE) "重试" else defaultLabel
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StageCard(
     title: String,
@@ -191,7 +203,9 @@ private fun StageCard(
     body: String,
     actionLabel: String?,
     onAction: () -> Unit,
-    enabled: Boolean
+    enabled: Boolean,
+    onLongPressBody: (() -> Unit)? = null,
+    bodyHint: String? = null
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -203,7 +217,21 @@ private fun StageCard(
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(statusLabel(status), style = MaterialTheme.typography.labelMedium)
             }
-            Text(body, style = MaterialTheme.typography.bodyMedium)
+            val bodyModifier = if (onLongPressBody != null) {
+                Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(onClick = {}, onLongClick = onLongPressBody)
+            } else {
+                Modifier
+            }
+            Text(body, style = MaterialTheme.typography.bodyMedium, modifier = bodyModifier)
+            if (bodyHint != null) {
+                Text(
+                    bodyHint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (actionLabel != null) {
                 OutlinedButton(
                     onClick = onAction,

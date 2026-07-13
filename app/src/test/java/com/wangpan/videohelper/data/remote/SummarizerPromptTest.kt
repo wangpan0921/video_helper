@@ -1,38 +1,45 @@
 package com.wangpan.videohelper.data.remote
 
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Guards the "规整而非概括" behavior of the Summarizer prompt: the LLM must regularize the transcript
- * (punctuation, paragraphs, filler removal) while staying faithful to the original wording, instead
- * of producing a condensed summary. These assertions are intentionally about prompt intent so we
- * don't silently regress back to a summary-style prompt.
+ * Guards the "总结要点" behavior of the Summarizer prompt: the LLM must extract and condense the
+ * transcript into a structured summary (key points), instead of regularizing the original wording
+ * verbatim. These assertions are intentionally about prompt intent so we don't silently regress to
+ * a full-text-preserving prompt, which caused long videos to time out.
  */
 class SummarizerPromptTest {
 
     @Test
-    fun promptEmbedsTranscript() {
+    fun summaryPromptEmbedsTranscript() {
         val transcript = "今天我们讲一个例子，嗯，就是说关于 2024 年的数据。"
-        val prompt = OpenAiCompatibleSummarizer.buildPolishPrompt(transcript)
+        val prompt = OpenAiCompatibleSummarizer.buildSummaryPrompt(transcript)
         assertTrue("prompt should include the raw transcript", prompt.contains(transcript))
     }
 
     @Test
-    fun promptRequiresFidelityNotSummary() {
-        val prompt = OpenAiCompatibleSummarizer.buildPolishPrompt("内容")
-        // Must instruct the model to stay faithful and NOT summarize/condense.
-        assertTrue(prompt.contains("贴合原文"))
-        assertTrue(prompt.contains("不要概括"))
-        assertTrue(prompt.contains("不要压缩"))
-        assertTrue(prompt.contains("不要总结"))
+    fun summaryPromptAsksForKeyPointsNotVerbatim() {
+        val prompt = OpenAiCompatibleSummarizer.buildSummaryPrompt("内容")
+        // Must instruct the model to summarize / extract key points.
+        assertTrue(prompt.contains("要点总结"))
+        assertTrue(prompt.contains("提炼"))
+        assertTrue(prompt.contains("概括"))
     }
 
     @Test
-    fun promptIsNotSummaryStyle() {
-        val prompt = OpenAiCompatibleSummarizer.buildPolishPrompt("内容")
-        // Old summary-style prompt asked to "提炼" key points; the regularization prompt must not.
-        assertFalse("prompt must not ask the model to extract/condense key points", prompt.contains("提炼"))
+    fun chunkPromptEmbedsSegmentAndAsksForKeyPoints() {
+        val segment = "这一段讲了 A、B、C 三个方面。"
+        val prompt = OpenAiCompatibleSummarizer.buildChunkPrompt(segment)
+        assertTrue(prompt.contains(segment))
+        assertTrue(prompt.contains("要点"))
+    }
+
+    @Test
+    fun mergePromptEmbedsPointsAndAsksForCoherentArticle() {
+        val points = "- 要点一\n- 要点二"
+        val prompt = OpenAiCompatibleSummarizer.buildMergePrompt(points)
+        assertTrue(prompt.contains(points))
+        assertTrue(prompt.contains("整合"))
     }
 }
