@@ -16,9 +16,9 @@ interface Summarizer {
  * OpenAI-compatible /chat/completions client. Defaults target Zhipu GLM-4-Flash (free tier, strong
  * Chinese), but any compatible endpoint works via Settings.
  *
- * 目标是「规整」而非「概括」：尽量贴合语音转写原文，只做可读化整理（断句、分段、去口水词、纠正明显的
- * 同音/错别字），不重新提炼、不压缩信息、不改写表达顺序。长转写按顺序分块逐段规整后拼接，避免超出上下文
- * 窗口，同时保证不丢失细节。
+ * 目标是「总结要点」而非「原文规整」：对转写文本提炼要点、生成结构化的文章总结。长转写按顺序分块，先对
+ * 每块提炼要点（map），再把各块要点合并成一篇完整总结（reduce）。这样每次请求的输入和输出都可控，
+ * 避免长视频（如 1 小时）因整篇规整导致输出过长而超时或卡住，保证每次都能成功生成总结。
  */
 class OpenAiCompatibleSummarizer(
     private val client: OkHttpClient = defaultClient()
@@ -30,17 +30,38 @@ class OpenAiCompatibleSummarizer(
         require(clean.isNotEmpty()) { "转写文本为空，无法总结。" }
 
         val chunks = chunk(clean, MAX_CHARS_PER_CHUNK)
-        // 逐块规整后按原始顺序拼接；不做 map-reduce 提炼，避免信息被压缩或改写。
-        return chunks.joinToString("\n\n") { c ->
-            chat(buildPolishPrompt(c), settings)
+        // 短文本直接一次性总结要点。
+        if (chunks.size == 1) {
+            return chat(buildSummaryPrompt(chunks.first()), settings)
         }
+        // 长文本：先逐块提炼要点（map），再把要点合并成完整总结（reduce）。
+        val partials = chunks.map { c -> chat(buildChunkPrompt(c), settings) }
+        return reduce(partials, settings)
+    }
+
+    /**
+     * 把各块要点合并成一篇总结。若要点本身仍然过长，先分块再次压缩，直到能一次性合并，保证请求可控、
+     * 不会因为输入过大而失败。
+     */
+    private fun reduce(partials: List<String>, settings: AppSettings): String {
+        var current = partials
+        // 防御性上限，避免极端情况下无限循环。
+        repeat(MAX_REDUCE_ROUNDS) {
+            val merged = current.joinToString("\n\n").trim()
+            if (merged.length <= MAX_CHARS_PER_CHUNK) {
+                return chat(buildMergePrompt(merged), settings)
+            }
+            current = chunk(merged, MAX_CHARS_PER_CHUNK).map { c -> chat(buildChunkPrompt(c), settings) }
+        }
+        // 兜底：直接返回拼接后的要点，确保总有结果。
+        return current.joinToString("\n\n").trim()
     }
 
     private fun chat(prompt: String, settings: AppSettings): String {
         val payload = JSONObject().apply {
             put("model", settings.llmModel)
-            // 低温度，尽量贴合原文、减少自由发挥与改写。
-            put("temperature", 0.2)
+            // 适度温度，允许对要点做自然的书面表达。
+            put("temperature", 0.3)
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "user")
@@ -92,6 +113,7 @@ class OpenAiCompatibleSummarizer(
 
     companion object {
         private const val MAX_CHARS_PER_CHUNK = 6_000
+        private const val MAX_REDUCE_ROUNDS = 5
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -100,16 +122,29 @@ class OpenAiCompatibleSummarizer(
             .build()
 
         /**
-         * 规整提示词：明确要求贴合原文、保留全部事实细节，只做可读化整理，禁止概括/压缩/改写顺序。
+         * 单块/短转写的要点总结提示词：直接从转写文本提炼要点，生成结构化的文章总结。
          */
-        fun buildPolishPrompt(text: String): String =
-            "你是一名严谨的中文文字校对与整理助手。下面是一段视频的语音转写文本，可能有口语重复、" +
-                "语气词、断句缺失和少量同音字错误。请把它整理成通顺、可读的书面文字，要求：\n" +
-                "1. 必须贴合原文，逐句对应整理，不要概括、不要压缩、不要总结，也不要改变内容的先后顺序。\n" +
-                "2. 完整保留原文中的所有事实、观点、举例、数字、时间、人名、地名和专有名词，不得删减或臆造。\n" +
-                "3. 仅做以下处理：补全标点和断句、合理分段、去除「嗯/啊/那个/就是说」等口水词和无意义重复、" +
-                "修正明显的同音字或错别字。\n" +
-                "4. 不要添加原文没有的信息、评论或小标题。\n" +
-                "5. 直接输出整理后的正文，不要解释你的处理过程。\n\n转写文本：\n$text"
+        fun buildSummaryPrompt(text: String): String =
+            "你是一名擅长内容提炼的中文编辑。下面是一段视频的语音转写文本，可能有口语重复和语气词。" +
+                "请对它进行要点总结，而不是逐字规整原文，要求：\n" +
+                "1. 提炼并概括核心内容，抓住主要观点、结论和关键信息，忽略口水词和无意义的重复。\n" +
+                "2. 用清晰的书面语组织成一篇结构化的总结文章，可使用小标题和要点列表，条理分明。\n" +
+                "3. 保留重要的事实、数字、结论和专有名词，但不必逐句照搬，重在概括而非复述。\n" +
+                "4. 直接输出总结正文，不要解释你的处理过程。\n\n转写文本：\n$text"
+
+        /**
+         * 分块要点提炼提示词（map 阶段）：对长转写的某一段提炼要点，输出尽量精炼。
+         */
+        fun buildChunkPrompt(text: String): String =
+            "下面是一段较长视频转写文本中的一个片段。请提炼这一片段的要点，用简洁的中文分条列出核心内容、" +
+                "主要观点和关键信息（含重要的事实、数字、结论），忽略口水词和重复。只输出要点，不要解释。\n\n片段内容：\n$text"
+
+        /**
+         * 要点合并提示词（reduce 阶段）：把各分段要点整合成一篇完整、连贯的总结文章。
+         */
+        fun buildMergePrompt(text: String): String =
+            "下面是同一个视频按时间顺序分段提炼出的要点。请把这些要点整合、去重，梳理成一篇结构清晰、" +
+                "条理连贯的中文总结文章，可使用小标题和要点列表，保留重要的事实、数字和结论。" +
+                "直接输出总结正文，不要解释你的处理过程。\n\n分段要点：\n$text"
     }
 }
