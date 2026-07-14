@@ -5,6 +5,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 
 /** Summarizes transcript text into a finished article. */
@@ -76,13 +78,31 @@ class OpenAiCompatibleSummarizer(
             .post(OpenAiCompatibleTranscriber.jsonBody(payload.toString()))
             .build()
 
-        client.newCall(request).execute().use { resp ->
-            val text = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) {
-                throw RuntimeException("大模型请求失败 (${resp.code}): ${text.take(300)}")
+        // 单次请求可能因模型输出较慢或网络抖动而超时；对超时/网络错误做有限次退避重试，
+        // 避免长视频整段总结因偶发超时直接失败。
+        var lastError: Exception? = null
+        repeat(MAX_RETRIES) { attempt ->
+            try {
+                client.newCall(request).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    if (!resp.isSuccessful) {
+                        throw RuntimeException("大模型请求失败 (${resp.code}): ${text.take(300)}")
+                    }
+                    return parseContent(text)
+                }
+            } catch (e: SocketTimeoutException) {
+                lastError = e
+            } catch (e: IOException) {
+                lastError = e
             }
-            return parseContent(text)
+            if (attempt < MAX_RETRIES - 1) {
+                Thread.sleep(RETRY_BACKOFF_MS * (attempt + 1))
+            }
         }
+        throw RuntimeException(
+            "大模型请求多次超时/失败（已重试 $MAX_RETRIES 次）。视频较长时可在设置中换用更快的模型，或稍后重试。",
+            lastError
+        )
     }
 
     private fun parseContent(json: String): String {
@@ -114,11 +134,16 @@ class OpenAiCompatibleSummarizer(
     companion object {
         private const val MAX_CHARS_PER_CHUNK = 6_000
         private const val MAX_REDUCE_ROUNDS = 5
+        private const val MAX_RETRIES = 3
+        private const val RETRY_BACKOFF_MS = 2_000L
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(2, TimeUnit.MINUTES)
-            .readTimeout(3, TimeUnit.MINUTES)
+            // 每次请求输出较短（要点/合并结果），5 分钟读超时足够宽裕；整体时间由分块数量决定，
+            // 单次请求不会把整段任务卡死，配合重试进一步降低长视频超时概率。
+            .readTimeout(5, TimeUnit.MINUTES)
+            .callTimeout(6, TimeUnit.MINUTES)
             .build()
 
         /**

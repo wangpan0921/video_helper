@@ -43,6 +43,7 @@ import android.widget.Toast
 import com.wangpan.videohelper.R
 import com.wangpan.videohelper.data.db.StageStatus
 import com.wangpan.videohelper.data.db.TaskEntity
+import com.wangpan.videohelper.util.formatRecordingDuration
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -142,7 +143,7 @@ fun TaskDetailScreen(
             StageCard(
                 title = stringResource(R.string.detail_video),
                 status = StageStatus.DONE,
-                body = "已录制 · 时长 ${t.durationMs / 1000}s · 麦克风${if (t.micIncluded) "开" else "关"}",
+                body = "已录制 · 时长 ${formatRecordingDuration(t.durationMs)} · 麦克风${if (t.micIncluded) "开" else "关"}",
                 actionLabel = null,
                 onAction = {},
                 enabled = false
