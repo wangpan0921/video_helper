@@ -77,4 +77,8 @@
     <string name="action_run_all">一键处理</string>
     <string name="transcript_copy_hint">长按可复制全文</string>
     <string name="transcript_copied">转写文本已复制到剪贴板</string>
+    <string name="tasks_rescan">重新扫描录制目录</string>
+    <string name="tasks_storage_needed">检测到部分录制保存在 /sdcard/videohelper，需要「所有文件访问权限」才能读取并显示。授权后会自动重新扫描。</string>
+    <string name="tasks_grant_access">去授权</string>
+    <string name="tasks_empty">还没有录制任务。去「录制」页开始，或授予存储权限后把已有录制读取进来。</string>
 </resources>
