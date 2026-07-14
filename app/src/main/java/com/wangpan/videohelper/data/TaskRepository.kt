@@ -12,12 +12,18 @@ import com.wangpan.videohelper.data.remote.Transcriber
 import com.wangpan.videohelper.data.settings.SettingsRepository
 import com.wangpan.videohelper.media.AudioExtractor
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+
+/** Live progress of a running pipeline stage. [fraction] is 0f..1f when known, null when indeterminate. */
+data class StageProgress(val message: String, val fraction: Float?)
 
 /**
  * Single entry point for the capture-to-article pipeline. Each stage is independent and persists its
@@ -34,6 +40,22 @@ class TaskRepository private constructor(
 
     fun observeAll(): Flow<List<TaskEntity>> = dao.observeAll()
     fun observe(id: String): Flow<TaskEntity?> = dao.observeById(id)
+
+    // In-memory, per-task progress for the currently running stage. Not persisted: on process death
+    // the stage is simply re-run, so there's nothing to restore. The UI observes this to replace the
+    // static "处理中…" with a live percentage / step count.
+    private val progressState = MutableStateFlow<Map<String, StageProgress>>(emptyMap())
+
+    /** Live progress of the running stage for [id], or null when nothing is in progress. */
+    fun observeProgress(id: String): Flow<StageProgress?> = progressState.map { it[id] }
+
+    private fun setProgress(id: String, message: String, fraction: Float?) {
+        progressState.update { it + (id to StageProgress(message, fraction)) }
+    }
+
+    private fun clearProgress(id: String) {
+        progressState.update { it - id }
+    }
 
     suspend fun createFromRecording(videoPath: String, durationMs: Long, micIncluded: Boolean): String {
         val now = System.currentTimeMillis()
@@ -166,10 +188,13 @@ class TaskRepository private constructor(
     suspend fun extractAudio(id: String) {
         val task = dao.getById(id) ?: return
         dao.update(task.copy(audioStatus = StageStatus.RUNNING, errorMessage = null))
+        setProgress(id, "抽取音频 0%", 0f)
         try {
             val dir = File(appContext.filesDir, "audio").apply { mkdirs() }
             val wav = File(dir, "audio_$id.wav")
-            AudioExtractor.extractToWav(File(task.videoPath), wav)
+            AudioExtractor.extractToWav(File(task.videoPath), wav) { frac ->
+                setProgress(id, "抽取音频 ${(frac * 100).toInt()}%", frac)
+            }
             dao.update(
                 dao.getById(id)!!.copy(
                     audioPath = wav.absolutePath,
@@ -180,6 +205,8 @@ class TaskRepository private constructor(
         } catch (e: Exception) {
             dao.update(dao.getById(id)!!.copy(audioStatus = StageStatus.FAILED, errorMessage = e.message))
             throw e
+        } finally {
+            clearProgress(id)
         }
     }
 
@@ -190,8 +217,16 @@ class TaskRepository private constructor(
             ?: error("请先抽取音频")
         val settings = settingsRepo.settings.first()
         dao.update(task.copy(transcribeStatus = StageStatus.RUNNING, errorMessage = null))
+        setProgress(id, "上传音频 0%", 0f)
         try {
-            val text = transcriber.transcribe(audio, settings)
+            val text = transcriber.transcribe(audio, settings) { frac ->
+                if (frac < 1f) {
+                    setProgress(id, "上传音频 ${(frac * 100).toInt()}%", frac)
+                } else {
+                    // Upload done; server-side transcription time is opaque, so show it as indeterminate.
+                    setProgress(id, "云端转写中…", null)
+                }
+            }
             dao.update(
                 dao.getById(id)!!.copy(
                     transcript = text,
@@ -202,6 +237,8 @@ class TaskRepository private constructor(
         } catch (e: Exception) {
             dao.update(dao.getById(id)!!.copy(transcribeStatus = StageStatus.FAILED, errorMessage = e.message))
             throw e
+        } finally {
+            clearProgress(id)
         }
     }
 
@@ -212,8 +249,12 @@ class TaskRepository private constructor(
             ?: error("请先转写文本")
         val settings = settingsRepo.settings.first()
         dao.update(task.copy(summarizeStatus = StageStatus.RUNNING, errorMessage = null))
+        setProgress(id, "生成文章…", null)
         try {
-            val article = summarizer.summarize(transcript, settings)
+            val article = summarizer.summarize(transcript, settings) { done, total ->
+                val frac = if (total > 0) done.toFloat() / total else null
+                setProgress(id, "生成文章 $done/$total 段", frac)
+            }
             dao.update(
                 dao.getById(id)!!.copy(
                     article = article,
@@ -224,6 +265,8 @@ class TaskRepository private constructor(
         } catch (e: Exception) {
             dao.update(dao.getById(id)!!.copy(summarizeStatus = StageStatus.FAILED, errorMessage = e.message))
             throw e
+        } finally {
+            clearProgress(id)
         }
     }
 

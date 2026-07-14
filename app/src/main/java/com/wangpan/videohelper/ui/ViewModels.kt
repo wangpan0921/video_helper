@@ -33,6 +33,9 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { repo.runAll(id) }
     }
 
+    /** Live progress of the running stage for [id] (percentage / step count), null when idle. */
+    fun progress(id: String) = repo.observeProgress(id)
+
     fun delete(id: String) = viewModelScope.launch { repo.delete(id) }
 }
 
@@ -40,6 +43,9 @@ class TaskDetailViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = TaskRepository.get(app)
 
     fun task(id: String) = repo.observe(id)
+
+    /** Live progress of the running stage for this task (percentage / step count), null when idle. */
+    fun progress(id: String) = repo.observeProgress(id)
 
     fun extractAudio(id: String) = launchStage { repo.extractAudio(id) }
     fun transcribe(id: String) = launchStage { repo.transcribe(id) }

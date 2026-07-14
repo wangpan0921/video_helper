@@ -11,7 +11,15 @@ import java.util.concurrent.TimeUnit
 
 /** Summarizes transcript text into a finished article. */
 interface Summarizer {
-    fun summarize(transcript: String, settings: AppSettings): String
+    /**
+     * @param onProgress optional callback with (completedSteps, totalSteps) as long transcripts are
+     *   summarized chunk-by-chunk, so the UI can show progress instead of a static state.
+     */
+    fun summarize(
+        transcript: String,
+        settings: AppSettings,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
+    ): String
 }
 
 /**
@@ -26,7 +34,11 @@ class OpenAiCompatibleSummarizer(
     private val client: OkHttpClient = defaultClient()
 ) : Summarizer {
 
-    override fun summarize(transcript: String, settings: AppSettings): String {
+    override fun summarize(
+        transcript: String,
+        settings: AppSettings,
+        onProgress: (done: Int, total: Int) -> Unit
+    ): String {
         require(settings.llmApiKey.isNotBlank()) { "未配置大模型 API Key，请先到设置填写。" }
         val clean = transcript.trim()
         require(clean.isNotEmpty()) { "转写文本为空，无法总结。" }
@@ -34,11 +46,22 @@ class OpenAiCompatibleSummarizer(
         val chunks = chunk(clean, MAX_CHARS_PER_CHUNK)
         // 短文本直接一次性总结要点。
         if (chunks.size == 1) {
-            return chat(buildSummaryPrompt(chunks.first()), settings)
+            onProgress(0, 1)
+            val result = chat(buildSummaryPrompt(chunks.first()), settings)
+            onProgress(1, 1)
+            return result
         }
         // 长文本：先逐块提炼要点（map），再把要点合并成完整总结（reduce）。
-        val partials = chunks.map { c -> chat(buildChunkPrompt(c), settings) }
-        return reduce(partials, settings)
+        // 总步数 = 每块提炼(chunks.size) + 最后合并(1)。
+        val total = chunks.size + 1
+        val partials = chunks.mapIndexed { index, c ->
+            onProgress(index, total)
+            chat(buildChunkPrompt(c), settings)
+        }
+        onProgress(chunks.size, total)
+        val article = reduce(partials, settings)
+        onProgress(total, total)
+        return article
     }
 
     /**

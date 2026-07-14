@@ -171,11 +171,21 @@ fun TasksScreen(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(task.title, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                text = progressLabel(task),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            val itemProgress by viewModel.progress(task.id).collectAsState(initial = null)
+                            val running = itemProgress
+                            if (running != null) {
+                                Text(
+                                    text = running.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            } else {
+                                Text(
+                                    text = progressLabel(task),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                         if (!task.anyRunning() && task.summarizeStatus != StageStatus.DONE) {
                             TextButton(onClick = { viewModel.runAll(task.id) }) {

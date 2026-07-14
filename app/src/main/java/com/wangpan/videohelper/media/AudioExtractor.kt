@@ -20,9 +20,11 @@ object AudioExtractor {
     private const val TIMEOUT_US = 10_000L
 
     /**
+     * @param onProgress optional callback invoked with a 0f..1f fraction as decoding advances,
+     *   so the UI can show real progress for long recordings instead of a static "processing" state.
      * @return the produced WAV file.
      */
-    fun extractToWav(videoFile: File, outputWav: File): File {
+    fun extractToWav(videoFile: File, outputWav: File, onProgress: (Float) -> Unit = {}): File {
         val extractor = MediaExtractor()
         var decoder: MediaCodec? = null
         try {
@@ -31,6 +33,12 @@ object AudioExtractor {
                 ?: error("录制文件中没有找到音频轨道")
             extractor.selectTrack(audioTrack)
             val inputFormat = extractor.getTrackFormat(audioTrack)
+
+            // Total audio duration (µs) drives the progress fraction; 0 when unknown.
+            val durationUs = if (inputFormat.containsKey(MediaFormat.KEY_DURATION)) {
+                inputFormat.getLong(MediaFormat.KEY_DURATION)
+            } else 0L
+            var lastReportedPercent = -1
 
             val srcSampleRate = inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             val srcChannels = if (inputFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
@@ -86,12 +94,23 @@ object AudioExtractor {
                             val pcm = downmixAndResample(outBuf, srcChannels, srcSampleRate)
                             raf.write(pcm)
                             totalPcmBytes += pcm.size
+
+                            // Report decode progress (throttled to whole-percent changes).
+                            if (durationUs > 0) {
+                                val percent = ((bufferInfo.presentationTimeUs * 100) / durationUs)
+                                    .toInt().coerceIn(0, 99)
+                                if (percent != lastReportedPercent) {
+                                    lastReportedPercent = percent
+                                    onProgress(percent / 100f)
+                                }
+                            }
                         }
                         decoder.releaseOutputBuffer(outIndex, false)
                     }
                 }
 
                 writeWavHeader(raf, totalPcmBytes, TARGET_SAMPLE_RATE, 1, 16)
+                onProgress(1f)
             }
             return outputWav
         } finally {

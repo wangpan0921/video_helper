@@ -19,6 +19,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.widget.Toast
 import com.wangpan.videohelper.R
+import com.wangpan.videohelper.data.StageProgress
 import com.wangpan.videohelper.data.db.StageStatus
 import com.wangpan.videohelper.data.db.TaskEntity
 import com.wangpan.videohelper.util.formatRecordingDuration
@@ -53,6 +55,7 @@ fun TaskDetailScreen(
     viewModel: TaskDetailViewModel = viewModel()
 ) {
     val task by viewModel.task(taskId).collectAsState(initial = null)
+    val progress by viewModel.progress(taskId).collectAsState(initial = null)
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
 
@@ -155,7 +158,8 @@ fun TaskDetailScreen(
                 body = t.audioPath?.let { "已抽取音频" } ?: "尚未抽取",
                 actionLabel = actionLabelFor(t.audioStatus, stringResource(R.string.action_extract_audio)),
                 onAction = { viewModel.extractAudio(taskId) },
-                enabled = !t.anyRunning()
+                enabled = !t.anyRunning(),
+                progress = progress
             )
 
             val transcriptText = t.transcript?.takeIf { it.isNotBlank() }
@@ -173,7 +177,8 @@ fun TaskDetailScreen(
                         Toast.makeText(context, transcriptCopiedMsg, Toast.LENGTH_SHORT).show()
                     }
                 },
-                bodyHint = transcriptText?.let { stringResource(R.string.transcript_copy_hint) }
+                bodyHint = transcriptText?.let { stringResource(R.string.transcript_copy_hint) },
+                progress = progress
             )
 
             StageCard(
@@ -182,7 +187,8 @@ fun TaskDetailScreen(
                 body = t.article?.takeIf { it.isNotBlank() } ?: "尚未生成",
                 actionLabel = actionLabelFor(t.summarizeStatus, stringResource(R.string.action_summarize)),
                 onAction = { viewModel.summarize(taskId) },
-                enabled = !t.anyRunning() && t.transcribeStatus == StageStatus.DONE
+                enabled = !t.anyRunning() && t.transcribeStatus == StageStatus.DONE,
+                progress = progress
             )
         }
     }
@@ -206,7 +212,8 @@ private fun StageCard(
     onAction: () -> Unit,
     enabled: Boolean,
     onLongPressBody: (() -> Unit)? = null,
-    bodyHint: String? = null
+    bodyHint: String? = null,
+    progress: StageProgress? = null
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -232,6 +239,24 @@ private fun StageCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            // Live progress for the running stage: replaces the static "处理中…" with a real
+            // percentage / step count and a progress bar so long recordings don't look frozen.
+            if (status == StageStatus.RUNNING && progress != null) {
+                Text(
+                    progress.message,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                val fraction = progress.fraction
+                if (fraction != null) {
+                    LinearProgressIndicator(
+                        progress = { fraction.coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
             }
             if (actionLabel != null) {
                 OutlinedButton(
