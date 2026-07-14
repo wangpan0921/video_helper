@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.wangpan.videohelper.R
@@ -65,7 +66,11 @@ fun TasksScreen(
 
     if (tasks.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("还没有录制任务，去「录制」页开始吧。")
+            Text(
+                "还没有录制任务。去「录制」页开始，或把已保存的录制文件放到 videohelper 目录后重新进入本页。",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(24.dp)
+            )
         }
         return
     }
@@ -97,6 +102,11 @@ fun TasksScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    if (!task.anyRunning() && task.summarizeStatus != StageStatus.DONE) {
+                        TextButton(onClick = { viewModel.runAll(task.id) }) {
+                            Text(stringResource(R.string.action_run_all))
+                        }
+                    }
                     IconButton(onClick = { pendingDelete = task }) {
                         Icon(Icons.Filled.Delete, contentDescription = "删除")
                     }
@@ -105,6 +115,11 @@ fun TasksScreen(
         }
     }
 }
+
+private fun TaskEntity.anyRunning(): Boolean =
+    audioStatus == StageStatus.RUNNING ||
+        transcribeStatus == StageStatus.RUNNING ||
+        summarizeStatus == StageStatus.RUNNING
 
 private fun progressLabel(task: TaskEntity): String {
     val steps = listOf(

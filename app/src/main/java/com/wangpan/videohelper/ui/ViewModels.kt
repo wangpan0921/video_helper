@@ -18,6 +18,21 @@ class TasksViewModel(app: Application) : AndroidViewModel(app) {
     val tasks: StateFlow<List<TaskEntity>> = repo.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    init {
+        // On open, rebuild any tasks whose recordings still exist on disk but were lost from the DB
+        // (e.g. after a reinstall), so the tasks page isn't empty when recordings are present.
+        rescanRecordings()
+    }
+
+    /** Re-scans the recording save directory and imports orphaned recordings as tasks. */
+    fun rescanRecordings() = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { repo.importRecordingsFromStorage() }
+    }
+
+    fun runAll(id: String) = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { repo.runAll(id) }
+    }
+
     fun delete(id: String) = viewModelScope.launch { repo.delete(id) }
 }
 

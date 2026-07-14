@@ -50,6 +50,110 @@ class TaskRepository private constructor(
         return task.id
     }
 
+    /**
+     * Rebuilds tasks from recordings already saved on disk (e.g. after a reinstall wiped the Room
+     * DB but the mp4 files under /sdcard/videohelper survived). Scans the output directory for
+     * `rec_*.mp4` files not already tracked and imports each as a RECORDED task, so the user can
+     * one-click process them again. If an exported article Markdown sits alongside the recording,
+     * its text is restored too. Returns the number of newly imported tasks.
+     */
+    suspend fun importRecordingsFromStorage(): Int {
+        // Scan both the public /sdcard/videohelper and the app-specific fallback dir, since a
+        // recording may have been saved to either depending on whether storage access was granted.
+        val roots = buildList {
+            add(com.wangpan.videohelper.storage.AppStorage.outputDir(appContext))
+            add(com.wangpan.videohelper.storage.AppStorage.publicDir())
+            (appContext.getExternalFilesDir(null) ?: appContext.filesDir)?.let {
+                add(File(it, com.wangpan.videohelper.storage.AppStorage.DIR_NAME))
+            }
+        }.filter { it.exists() }.distinctBy { it.absolutePath }
+        if (roots.isEmpty()) return 0
+
+        val known = dao.getAllVideoPaths().toHashSet()
+        var imported = 0
+        val recordings = roots.asSequence()
+            .flatMap { root ->
+                runCatching {
+                    root.walkTopDown()
+                        .filter { it.isFile && it.extension.equals("mp4", ignoreCase = true) }
+                        .filter { it.length() > 0 }
+                        .toList()
+                }.getOrDefault(emptyList())
+            }
+            .distinctBy { it.absolutePath }
+            .toList()
+
+        for (file in recordings) {
+            val path = file.absolutePath
+            if (path in known) continue
+
+            val createdAt = parseSessionTimestamp(file) ?: file.lastModified()
+            val duration = runCatching { probeDurationMs(file) }.getOrDefault(0L)
+            val restoredArticle = runCatching { restoreArticleBeside(file) }.getOrNull()
+            val task = TaskEntity(
+                id = UUID.randomUUID().toString(),
+                title = "录制 " + SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(createdAt)),
+                createdAt = createdAt,
+                videoPath = path,
+                durationMs = duration,
+                micIncluded = false,
+                article = restoredArticle,
+                summarizeStatus = if (restoredArticle != null) StageStatus.DONE else StageStatus.IDLE
+            )
+            dao.upsert(task)
+            known.add(path)
+            imported++
+        }
+        return imported
+    }
+
+    /** Extracts the recording's creation time from its `rec_yyyyMMdd_HHmmss.mp4` name / session folder. */
+    private fun parseSessionTimestamp(file: File): Long? {
+        val stamp = Regex("(\\d{8}_\\d{6})").find(file.name)?.groupValues?.get(1)
+            ?: file.parentFile?.name?.let { Regex("(\\d{8}_\\d{6})").find(it)?.groupValues?.get(1) }
+            ?: return null
+        return runCatching {
+            SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).parse(stamp)?.time
+        }.getOrNull()
+    }
+
+    /** Probes the video duration via MediaMetadataRetriever; returns 0 if unavailable. */
+    private fun probeDurationMs(file: File): Long {
+        val retriever = android.media.MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull() ?: 0L
+        } catch (e: Exception) {
+            0L
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    /**
+     * If an exported `article_*.md` sits next to the recording, returns its body (without the
+     * leading "# title" heading line we add on export), so a previously generated article survives
+     * a reinstall.
+     */
+    private fun restoreArticleBeside(video: File): String? {
+        val dir = video.parentFile ?: return null
+        val md = dir.listFiles { f -> f.isFile && f.name.startsWith("article_") && f.extension.equals("md", true) }
+            ?.maxByOrNull { it.lastModified() } ?: return null
+        val text = md.readText().trim()
+        if (text.isEmpty()) return null
+        // Drop the leading "# <title>" heading added by exportArticleToMarkdown.
+        return text.lineSequence()
+            .dropWhile { it.isBlank() }
+            .let { lines ->
+                val list = lines.toList()
+                if (list.firstOrNull()?.startsWith("# ") == true) list.drop(1) else list
+            }
+            .joinToString("\n")
+            .trim()
+            .ifEmpty { null }
+    }
+
     suspend fun delete(id: String) {
         dao.getById(id)?.let { task ->
             runCatching { File(task.videoPath).delete() }
