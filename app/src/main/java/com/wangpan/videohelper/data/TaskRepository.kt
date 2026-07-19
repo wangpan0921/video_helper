@@ -210,26 +210,43 @@ class TaskRepository private constructor(
         }
     }
 
-    /** Stage 3: transcribe the extracted audio to text. */
+    /** Stage 3: transcribe the extracted audio to text. Long audio is split into segments so it
+     * stays within the ASR endpoint's per-request size/duration limits and gets fully transcribed. */
     suspend fun transcribe(id: String) {
         val task = dao.getById(id) ?: return
         val audio = task.audioPath?.let { File(it) }
             ?: error("请先抽取音频")
         val settings = settingsRepo.settings.first()
         dao.update(task.copy(transcribeStatus = StageStatus.RUNNING, errorMessage = null))
-        setProgress(id, "上传音频 0%", 0f)
+        setProgress(id, "准备转写…", null)
+
+        val segmentsDir = File(appContext.cacheDir, "asr_segments").apply { mkdirs() }
+        val segments = try {
+            com.wangpan.videohelper.media.WavSplitter.split(audio, TRANSCRIBE_SEGMENT_SECONDS, segmentsDir)
+        } catch (e: Exception) {
+            // If splitting fails for any reason, fall back to transcribing the whole file.
+            listOf(audio)
+        }
         try {
-            val text = transcriber.transcribe(audio, settings) { frac ->
-                if (frac < 1f) {
-                    setProgress(id, "上传音频 ${(frac * 100).toInt()}%", frac)
-                } else {
-                    // Upload done; server-side transcription time is opaque, so show it as indeterminate.
-                    setProgress(id, "云端转写中…", null)
+            val total = segments.size
+            val builder = StringBuilder()
+            segments.forEachIndexed { index, segment ->
+                val label = if (total > 1) "转写 第${index + 1}/$total 段" else "转写中"
+                setProgress(id, "$label · 上传 0%", if (total > 1) index.toFloat() / total else 0f)
+                val text = transcriber.transcribe(segment, settings) { up ->
+                    val overall = (index + up.coerceIn(0f, 1f)) / total
+                    val msg = if (up < 1f) "$label · 上传 ${(up * 100).toInt()}%" else "$label · 云端转写中…"
+                    setProgress(id, msg, overall)
+                }
+                val piece = text.trim()
+                if (piece.isNotEmpty()) {
+                    if (builder.isNotEmpty()) builder.append('\n')
+                    builder.append(piece)
                 }
             }
             dao.update(
                 dao.getById(id)!!.copy(
-                    transcript = text,
+                    transcript = builder.toString(),
                     transcribeStatus = StageStatus.DONE,
                     errorMessage = null
                 )
@@ -238,6 +255,8 @@ class TaskRepository private constructor(
             dao.update(dao.getById(id)!!.copy(transcribeStatus = StageStatus.FAILED, errorMessage = e.message))
             throw e
         } finally {
+            // Clean up temp segment files (never the original audio).
+            segments.filter { it.absolutePath != audio.absolutePath }.forEach { runCatching { it.delete() } }
             clearProgress(id)
         }
     }
@@ -302,6 +321,11 @@ class TaskRepository private constructor(
     }
 
     companion object {
+        // Max audio seconds per ASR request. A 16 kHz mono 16-bit segment of this length is ~3.8MB,
+        // safely under typical endpoint caps (e.g. SiliconFlow's 50MB / 1h), so long recordings are
+        // transcribed in full instead of being truncated by the size limit.
+        private const val TRANSCRIBE_SEGMENT_SECONDS = 120
+
         @Volatile
         private var INSTANCE: TaskRepository? = null
 
